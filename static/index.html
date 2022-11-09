@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="generator" content=
+  "HTML Tidy for HTML5 for Linux version 5.7.45">
+  <meta charset="UTF-8">
+  <link rel="icon" href="data:,">
+  <script src=
+  "https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.0/echarts.min.js"
+  integrity=
+  "sha512-LYmkblt36DJsQPmCK+cK5A6Gp6uT7fLXQXAX0bMa763tf+DgiiH3+AwhcuGDAxM1SvlimjwKbkMPL3ZM1qLbag=="
+  crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <title></title>
+</head>
+<body>
+  <header>
+    <h2>Kama Zman</h2>
+  </header>
+  <div>
+    <input type="text" placeholder="line number" name="lineNumber"
+    id="line-number"> line: <span id="show-line-number"></span>
+    route: <span id="show-route"></span> StopA: <span id=
+    "show-stop-a"></span> StopB: <span id="show-stop-b"></span><br>
+    <label for="line-select">The specific line:</label> <select id=
+    "line-select">
+    </select> <label for="stop-select">The first stop:</label>
+    <select id="stop-select-a">
+    </select> <label for="stop-select">The final stop:</label>
+    <select id="stop-select-b">
+    </select> <button id="run">Run</button>
+    <hr>
+    <div id="all-charts"></div>
+    <script>
+    const lineNumber_input = document.getElementById("line-number");
+    const showLineNumber = document.getElementById("show-line-number");
+    const lineSelect = document.getElementById("line-select");
+    const stopSelectA = document.getElementById("stop-select-a");
+    const stopSelectB = document.getElementById("stop-select-b");
+    const showStopA = document.getElementById("show-stop-a");
+    const showStopB = document.getElementById("show-stop-b");
+    const showRoute = document.getElementById("show-route");
+    const allCharts = document.getElementById("all-charts");
+    document.getElementById("run").addEventListener('click', run);
+
+    var stops = {};
+    var route;
+
+    function sbyid(id){
+      return stops.StopCodes[parseInt(id)];
+    }
+    lineNumber_input.addEventListener('input', updateLineNumber);
+    lineSelect.addEventListener('input', updateRoute);
+    stopSelectA.addEventListener('input', evt=>{updateB(); showStopA.textContenta=sbyid(stopSelectA.value);});
+    stopSelectB.addEventListener('input', evt => {showStopB.textContent=sbyid(stopSelectB.value);});
+
+    function updateLineNumber(e) {
+    showLineNumber.textContent = e.target.value;
+    fetch("/api/routes/" + e.target.value) 
+      .then(res => res.json())
+      .then(res => {
+         updateRouteOptions(res);
+       })
+      .catch(err => {
+        console.log(err);
+        stops = {};
+        route = null;
+    });
+    };
+    function updateRouteOptions(res) {
+      // remove existing options.
+      while (lineSelect.firstChild)
+        lineSelect.removeChild(lineSelect.firstChild);
+      for (let i=0; i<res.RouteIds.length; i++) {
+        let option = document.createElement("option");
+        option.text = res.Names[i];
+        option.value = res.RouteIds[i];
+        lineSelect.add(option);
+      }
+    }
+    function updateRoute(e) {
+    showRoute.textContent = e.target.value;
+    route = e.target.value;
+    fetch("/api/stops/" + e.target.value) 
+      .then(res => res.json())
+      .then(res => {
+         updateStops(res);
+       })
+      .catch(err => console.log(err));
+    };
+    function updateStops(res) {
+      stops = res;
+      // remove existing options.
+      while (stopSelectA.firstChild)
+        stopSelectA.removeChild(stopSelectA.firstChild);
+      for (let i=0; i<res.StopCodes.length - 1; i++) {
+        let option = document.createElement("option");
+        option.text = res.StopDescs[i];
+        option.value = i;
+        stopSelectA.add(option);
+      }
+      updateB();
+    }
+    function updateB() {
+      // remove existing options.
+      let res = stops;
+      while (stopSelectB.firstChild)
+        stopSelectB.removeChild(stopSelectB.firstChild);
+      for (let i=parseInt(stopSelectA.value) + 1; i<res.StopCodes.length; i++) {
+        let option = document.createElement("option");
+        option.text = res.StopDescs[i];
+        option.value = i;
+        stopSelectB.add(option);
+      }
+    }
+
+    function run() {
+      if (stops.length == 0) return;
+      stopA = stops.StopCodes[parseInt(stopSelectA.value)];
+      stopB = stops.StopCodes[parseInt(stopSelectB.value)];
+    fetch("/api/arrivals/" + route + "/" + stopA + "/" + stopB) 
+      .then(res => res.json())
+      .then(res => {
+         plot(res);
+       })
+      .catch(err => console.log(err));
+    };
+    function plot(res){
+      if (res.Month.length == 0) return;
+      // remove existing graphs.
+      while (allCharts.firstChild)
+        allCharts.removeChild(allCharts.firstChild);
+      let n = 0;
+      while (n < res.Month.length) {
+        n = plotMonth(res, n)
+      }
+    }
+    function plotMonth(res, m) {
+    let c = res.Month[m];
+    let all_s = []
+    let s = [];
+    let f = res.DayOfWeek[m] 
+    while (m < res.Month.length && res.Month[m] == c) {
+      if (f != res.DayOfWeek[m]) {
+        all_s.push({
+          name: f,
+          type: 'line',
+          data: s});
+        s =[];
+        f = res.DayOfWeek[m];
+      }
+        s.push([res.HourSourceTime[m], res.TimeDiff[m]]);
+      m++;
+    }
+    if (s.length != 0) 
+        all_s.push({
+          name: f,
+          type: 'line',
+          data: s});
+
+        let chartDiv = document.createElement("div");
+        chartDiv.style = "width: 600px; height: 400px;";
+      let chart = echarts.init(chartDiv);
+      chart.setOption({
+        title: { text: 'Travel times Month: ' + c},
+        xAxis: {
+         type: 'value',
+         name: 'Hour of Initial Departure'
+    },
+        yAxis: {
+         type: 'value',
+         name: 'minutes'
+
+        },
+        dataZoom:[],
+        legend: {},
+        tooltip: {},
+        series: all_s
+       });
+    allCharts.appendChild(chartDiv);
+    return m;
+    }
+
+    </script>
+  </div>
+</body>
+</html>
